@@ -10,9 +10,6 @@ from torchvision.models.detection.faster_rcnn import (
     FastRCNNPredictor,
 )
 import utils
-
-
-
 #     ⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⣤⣤⣤⣤⣶⣦⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⡿⠛⠉⠙⠛⠛⠛⠛⠻⢿⣿⣷⣤⡀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⠋⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⠈⢻⣿⣿⡄⠀⠀⠀⠀
@@ -47,18 +44,10 @@ def get_model_instance_segmentation(num_classes: int, default: bool):
 
 
 class InstanceSegmentationDataset(torch.utils.data.Dataset):
-    def __init__(self, root, images_path, transforms):
-        self.root = root
+    def __init__(self, images: list, transforms):
         self.transforms = transforms
-        self.imgs = list(sorted(os.listdir(self.root + images_path)))[:10000]
-        self.ordered_images = []
-        
-        for file_img_path in self.imgs:
-            try:
-                image = Image.open(f"{root}{images_path}{file_img_path}").convert("RGB")
-                self.ordered_images.append(image)
-            except:
-                print(f"could not open {file_img_path}")
+        self.images = images
+
 
     def __getitem__(self, idx) -> torch.Tensor:
         img = self.transforms(self.ordered_images[idx])
@@ -303,11 +292,23 @@ class AlprSetupTraining(LicensePlatesDetection):
 class AlprSetupPlateCrop:
     "automatic license plate recognition"
 
-    def __init__(self, model, root, path_to_imgs) -> None:
+    def __init__(self, model, root: str, path_to_imgs: str, idx_start: int, idx_end: int) -> None:
         self.model = model
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+
+        self.imgs_names = list(sorted(os.listdir(root + path_to_imgs)))[idx_start:idx_end]
+        self.ordered_images = []
+        for file_img_path in self.imgs:
+            try:
+                image = Image.open(f"{root}{self.images_names}{file_img_path}").convert("RGB")
+                self.ordered_images.append(image)
+            except:
+                print(f"could not open {file_img_path}")
+
+
+
         self.dataset = InstanceSegmentationDataset(
-            root=root, images_path=path_to_imgs, transforms=utils.get_transform(False)
+            images=self.ordered_images, transforms=utils.get_transform(False)
         )
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
@@ -319,14 +320,21 @@ class AlprSetupPlateCrop:
         self.model.eval()
         self.model = self.model.to(self.device)
         time_start = time.time()
+
         with torch.no_grad():
             for i, inputs in enumerate(self.dataloader):
                 inputs = list(image.to(self.device) for image in inputs)
                 outputs = self.model(inputs)
-                            
+                
+
                 if len(outputs[0]["boxes"]) > 0:
+                    boxes = outputs[0]["boxes"]
+                    for box in boxes:
+                        visual = utils.draw_bboxes(inputs[0], boxes)
+                        utils.show(visual)
+
                     best_box = outputs[0]['boxes'][0]
-                    path_to_save_file = path_to_save + f'{i+50000}.jpg'
+                    path_to_save_file = path_to_save + f'{i}.jpg'
                     utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
             
                 if i%100 == 0:
