@@ -24,7 +24,7 @@ def draw_bboxes(image, boxes, labels=None):
         return
     else:
         visual = draw_bounding_boxes(image, boxes, colors=(255, 0, 0), width=2)
-        show(visual)
+    return visual
 
 
 def save_boxes_img(path_to_save: str, image: torch.Tensor, boxes: torch.Tensor):
