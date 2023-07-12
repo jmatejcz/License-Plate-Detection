@@ -10,6 +10,9 @@ from torchvision.models.detection.faster_rcnn import (
     FastRCNNPredictor,
 )
 import utils
+import transforms
+
+
 #     ⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⣤⣤⣤⣤⣶⣦⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⡿⠛⠉⠙⠛⠛⠛⠛⠻⢿⣿⣷⣤⡀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⠋⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⠈⢻⣿⣿⡄⠀⠀⠀⠀
@@ -48,13 +51,12 @@ class InstanceSegmentationDataset(torch.utils.data.Dataset):
         self.transforms = transforms
         self.images = images
 
-
     def __getitem__(self, idx) -> torch.Tensor:
-        img = self.transforms(self.ordered_images[idx])
+        img = self.transforms(self.images[idx])
         return img
 
     def __len__(self):
-        return len(self.imgs)
+        return len(self.images)
 
 
 class InstanceSegmentationCocoDataset(torch.utils.data.Dataset):
@@ -211,7 +213,9 @@ class LicensePlatesDetection:
 
             if show_fr > 0:
                 if i % show_fr == 0:
-                    utils.draw_bboxes(inputs[0], targets[0]["boxes"], targets[0]["labels"])
+                    utils.draw_bboxes(
+                        inputs[0], targets[0]["boxes"], targets[0]["labels"]
+                    )
 
             self.optimizer.zero_grad()
             losses_dict = self.model(inputs, targets)
@@ -233,9 +237,10 @@ class LicensePlatesDetection:
         iou_scores = []
         with torch.no_grad():
             for i, (inputs, targets) in enumerate(self.dataloaders["test"]):
-                
                 inputs = list(image.to(self.device) for image in inputs)
-                targets = [{k: v.to(self.device) for k, v in t.items()} for t in targets]
+                targets = [
+                    {k: v.to(self.device) for k, v in t.items()} for t in targets
+                ]
                 outputs = self.model(inputs)
                 filtered_outputs = []
                 for o in outputs:
@@ -243,7 +248,7 @@ class LicensePlatesDetection:
                     for j, score in enumerate(o["scores"]):
                         if score > score_threshold:
                             filtered_outputs.append([{k: v[j] for k, v in o.items()}])
-            
+
                 for j, outs in enumerate(filtered_outputs):
                     if show_fr > 0:
                         if i % show_fr == 0:
@@ -255,8 +260,10 @@ class LicensePlatesDetection:
 
                     if len(filtered_outputs) > 0:
                         iou_scores.append(
-                            #TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
-                            utils.get_IoU(outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0])
+                            # TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
+                            utils.get_IoU(
+                                outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0]
+                            )
                         )
                     else:
                         iou_scores = [0.0]
@@ -292,23 +299,40 @@ class AlprSetupTraining(LicensePlatesDetection):
 class AlprSetupPlateCrop:
     "automatic license plate recognition"
 
-    def __init__(self, model, root: str, path_to_imgs: str, idx_start: int, idx_end: int) -> None:
+    def __init__(
+        self, model, root: str, path_to_imgs: str, idx_start: int, idx_end: int
+    ) -> None:
         self.model = model
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
-        self.imgs_names = list(sorted(os.listdir(root + path_to_imgs)))[idx_start:idx_end]
+        self.root = root
+        self.path_to_imgs = path_to_imgs
+        self.fileterd_img_names = []
+        try:
+            imgs_names = list(sorted(os.listdir(root + path_to_imgs)))[
+                idx_start:idx_end
+            ]
+            for img_name in imgs_names:
+                try:
+                    #                     if not img_name.split('_')[2] == 3:
+                    self.fileterd_img_names.append(img_name)
+                except IndexError as err:
+                    print("wrong file format")
+        except FileNotFoundError as err:
+            print(err)
+
         self.ordered_images = []
-        for file_img_path in self.imgs:
+        for file_img_path in self.fileterd_img_names:
             try:
-                image = Image.open(f"{root}{self.images_names}{file_img_path}").convert("RGB")
+                image = Image.open(f"{root}{path_to_imgs}{file_img_path}").convert(
+                    "RGB"
+                )
                 self.ordered_images.append(image)
             except:
-                print(f"could not open {file_img_path}")
-
-
+                print(f"could not open {root}{file_img_path}")
 
         self.dataset = InstanceSegmentationDataset(
-            images=self.ordered_images, transforms=utils.get_transform(False)
+            images=self.ordered_images, transforms=transforms.get_transform(False)
         )
         self.dataloader = torch.utils.data.DataLoader(
             self.dataset,
@@ -316,7 +340,23 @@ class AlprSetupPlateCrop:
             shuffle=False,
         )
 
-    def crop_plates(self, path_to_save: str, score_threshold: float = 0.7, show_fr: int = 0):
+    def crop_plates(
+        self,
+        path_to_save: str,
+        score_threshold: float = 0.9,
+        show_fr: int = 0,
+        remove_empty: bool = False,
+        crop_enlarge: float = 1.0,
+    ):
+        """Crop plates and save new images as only boxes of detected plates
+
+        :param show_fr: every <number> image will be shown, defaults to 0
+        :type show_fr: int, optional
+        :param remove_empty: removes empty images from oryginal directory, defaults to False
+        :type remove_empty: bool, optional
+        :param crop_enlarge: cropes larger or smaller area than box, defaults to 1.0
+        :type crop_enlarge: float, optional
+        """
         self.model.eval()
         self.model = self.model.to(self.device)
         time_start = time.time()
@@ -325,22 +365,39 @@ class AlprSetupPlateCrop:
             for i, inputs in enumerate(self.dataloader):
                 inputs = list(image.to(self.device) for image in inputs)
                 outputs = self.model(inputs)
-                
 
                 if len(outputs[0]["boxes"]) > 0:
-                    boxes = outputs[0]["boxes"]
-                    for box in boxes:
-                        visual = utils.draw_bboxes(inputs[0], boxes)
-                        utils.show(visual)
+                    if show_fr > 0:
+                        if i % show_fr == 0:
+                            boxes = []
+                            for u, box in enumerate(outputs[0]["boxes"]):
+                                if outputs[0]["scores"][u] > score_threshold:
+                                    boxes.append(box.cpu().numpy())
 
-                    best_box = outputs[0]['boxes'][0]
-                    path_to_save_file = path_to_save + f'{i}.jpg'
-                    utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
-            
-                if i%100 == 0:
+                                boxes = torch.as_tensor(boxes)
+                                visual = utils.draw_bboxes(inputs[0], boxes)
+                                if isinstance(visual, torch.Tensor):
+                                    print(outputs[0]["scores"], boxes)
+                                    utils.show(visual)
+
+                    if outputs[0]["scores"][0] > score_threshold:
+                        best_box = outputs[0]["boxes"][0]
+                        if crop_enlarge != 1.0:
+                            best_box = utils.enlarge_box(
+                                inputs[0].shape, best_box, crop_enlarge
+                            )
+                        path_to_save_file = path_to_save + self.fileterd_img_names[i]
+                        utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
+
+                elif remove_empty:
+                    os.remove(
+                        f"{self.root}{self.path_to_imgs}{self.fileterd_img_names[i]}"
+                    )
+
+                if i % 100 == 0:
                     time_end = time.time()
                     print(f"images done -> {i}, time_spent: {time_end-time_start}")
-        
+
         print(f"time -> {time_end - time_start}")
 
     def load_state_dict(self, path_to_weights: str):
