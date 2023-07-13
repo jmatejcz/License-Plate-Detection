@@ -9,9 +9,15 @@ import torchvision
 from torchvision.models.detection.faster_rcnn import (
     FastRCNNPredictor,
 )
+<<<<<<< HEAD
 import alpr.utils.metrics as metrics
 import alpr.ai_utils.transforms as transforms
 from alpr.plate_segmentation.datasets import InstanceSegmentationDataset
+=======
+import utils.metrics as metrics
+import ai_utils.transforms as transforms
+from datasets import InstanceSegmentationDataset
+>>>>>>> 1074271 (imports fixed)
 
 
 #     ⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⣤⣤⣤⣤⣶⣦⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀
