@@ -13,7 +13,7 @@ from torch.nn.utils.clip_grad import clip_grad_norm_
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from AI_utils.transforms import EarlyStopping, AverageMeter, Eval, OCRLabelConverter
+from ai_utils.transforms import EarlyStopping, AverageMeter, Eval, OCRLabelConverter
 from utils.utils import gmkdir
 from tqdm import *
 
