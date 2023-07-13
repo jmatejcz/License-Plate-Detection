@@ -10,7 +10,7 @@ from torchvision.models.detection.faster_rcnn import (
     FastRCNNPredictor,
 )
 import utils.metrics as metrics
-import AI_utils.transforms as transforms
+import ai_utils.transforms as transforms
 from datasets import InstanceSegmentationDataset
 
 
