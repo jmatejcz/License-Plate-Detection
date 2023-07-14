@@ -2,7 +2,7 @@ import os
 import numpy as np
 import torch
 from PIL import Image
-import json
+import cv2
 import copy
 import time
 import torchvision
@@ -240,7 +240,8 @@ class PlateCropper():
                             best_box = image_utils.enlarge_box(
                                 inputs[0].shape, best_box, crop_enlarge
                             )
-                        self.croped_plates.append(best_box)
+                            box_img = image_utils.get_box_img(inputs[0], best_box)
+                        self.croped_plates.append(box_img)
         
         return self.croped_plates
     
@@ -256,28 +257,7 @@ class AlprSetupPlateCrop(PlateCropper):
         self.root = root
         self.path_to_imgs = path_to_imgs
         self.fileterd_img_names = []
-        try:
-            imgs_names = list(sorted(os.listdir(root + path_to_imgs)))[
-                idx_start:idx_end
-            ]
-            for img_name in imgs_names:
-                try:
-                    self.fileterd_img_names.append(img_name)
-                except IndexError as err:
-                    print("wrong file format")
-        except FileNotFoundError as err:
-            print(err)
-
-        self.ordered_images = []
-        for file_img_path in self.fileterd_img_names:
-            try:
-                image = Image.open(f"{root}{path_to_imgs}{file_img_path}").convert(
-                    "RGB"
-                )
-                self.ordered_images.append(image)
-            except:
-                print(f"could not open {root}{file_img_path}")
-
+        self.ordered_images, self.fileterd_img_names = image_utils.load_images(root+path_to_imgs, idx_start=idx_start, idx_end=idx_end)
         super().__init__(model=model, images=self.ordered_images)
 
     def crop_plates(
@@ -327,7 +307,9 @@ class AlprSetupPlateCrop(PlateCropper):
                                 inputs[0].shape, best_box, crop_enlarge
                             )
                         path_to_save_file = path_to_save + self.fileterd_img_names[i]
-                        image_utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
+                        box_img = image_utils.get_box_img(inputs[0], best_box)
+                        cv2.imwrite(path_to_save_file, np.asarray(box_img))
+                        # image_utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
 
                 elif remove_empty:
                     os.remove(
@@ -339,6 +321,3 @@ class AlprSetupPlateCrop(PlateCropper):
                     print(f"images done -> {i}, time_spent: {time_end-time_start}")
         time_end = time.time()
         print(f"time -> {time_end - time_start}")
-
-    def load_state_dict(self, path_to_weights: str):
-        self.model.load_state_dict(torch.load(path_to_weights))
