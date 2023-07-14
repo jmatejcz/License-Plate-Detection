@@ -115,7 +115,7 @@ class LicensePlatesDetection:
 
             if show_fr > 0:
                 if i % show_fr == 0:
-                    metrics.draw_bboxes(
+                    image_utils.draw_bboxes(
                         inputs[0], targets[0]["boxes"], targets[0]["labels"]
                     )
 
@@ -154,18 +154,18 @@ class LicensePlatesDetection:
                 for j, outs in enumerate(filtered_outputs):
                     if show_fr > 0:
                         if i % show_fr == 0:
-                            metrics.draw_bboxes(
+                            image_utils.draw_bboxes(
                                 inputs[0], outs[0]["boxes"].unsqueeze(0)
                             )
 
                     if save_boxes:
                         path = f"/workspace/alpr/croped_plates/{i}_{j}.jpg"
-                        metrics.save_boxes_img(path, inputs[0], outs[0]["boxes"])
+                        image_utils.save_boxes_img(path, inputs[0], outs[0]["boxes"])
 
                     if len(filtered_outputs) > 0:
                         iou_scores.append(
                             # TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
-                            metrics.get_IoU(
+                            image_utils.get_IoU(
                                 outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0]
                             )
                         )
@@ -199,16 +199,60 @@ class AlprSetupTraining(LicensePlatesDetection):
             train_split=0.8,
         )
 
+class PlateCropper():
+    "crops plates from given images"
+    def __init__(self, model, images: list) -> None:
+        self.images = images
+        self.model = model
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.dataset = InstanceSegmentationDataset(
+            images=self.images, transforms=transforms.get_transform(train=False)
+        )
+        self.dataloader = torch.utils.data.DataLoader(
+            self.dataset,
+            batch_size=1,
+            shuffle=False,
+        )
+    
+    def crop_plates(
+        self,
+        score_threshold: float = 0.9,
+        crop_enlarge: float = 1.0,
+    ) -> list:
+        """Crop plates and returns new images as only boxes of detected plates or None if no plate was detected
 
-class AlprSetupPlateCrop:
-    "automatic license plate recognition"
+        :param crop_enlarge: cropes larger or smaller area than box, defaults to 1.0
+        :type crop_enlarge: float, optional
+        """
+        self.model.eval()
+        self.model = self.model.to(self.device)
+        self.croped_plates = []
+
+        with torch.no_grad():
+            for i, inputs in enumerate(self.dataloader):
+                inputs = list(image.to(self.device) for image in inputs)
+                outputs = self.model(inputs)
+
+                if len(outputs[0]["boxes"]) > 0:
+                    if outputs[0]["scores"][0] > score_threshold:
+                        best_box = outputs[0]["boxes"][0]
+                        if crop_enlarge != 1.0:
+                            best_box = image_utils.enlarge_box(
+                                inputs[0].shape, best_box, crop_enlarge
+                            )
+                        self.croped_plates.append(best_box)
+        
+        return self.croped_plates
+    
+    def load_state_dict(self, path_to_weights: str):
+        self.model.load_state_dict(torch.load(path_to_weights))
+
+class AlprSetupPlateCrop(PlateCropper):
+    "Extended version of PlateCropper, can save results, tracks time, shows images and results"
 
     def __init__(
         self, model, root: str, path_to_imgs: str, idx_start: int, idx_end: int
     ) -> None:
-        self.model = model
-        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
         self.root = root
         self.path_to_imgs = path_to_imgs
         self.fileterd_img_names = []
@@ -218,7 +262,6 @@ class AlprSetupPlateCrop:
             ]
             for img_name in imgs_names:
                 try:
-                    #                     if not img_name.split('_')[2] == 3:
                     self.fileterd_img_names.append(img_name)
                 except IndexError as err:
                     print("wrong file format")
@@ -235,14 +278,7 @@ class AlprSetupPlateCrop:
             except:
                 print(f"could not open {root}{file_img_path}")
 
-        self.dataset = InstanceSegmentationDataset(
-            images=self.ordered_images, transforms=transforms.get_transform(False)
-        )
-        self.dataloader = torch.utils.data.DataLoader(
-            self.dataset,
-            batch_size=1,
-            shuffle=False,
-        )
+        super().__init__(model=model, images=self.ordered_images)
 
     def crop_plates(
         self,
@@ -279,19 +315,19 @@ class AlprSetupPlateCrop:
                                     boxes.append(box.cpu().numpy())
 
                                 boxes = torch.as_tensor(boxes)
-                                visual = metrics.draw_bboxes(inputs[0], boxes)
+                                visual = image_utils.draw_bboxes(inputs[0], boxes)
                                 if isinstance(visual, torch.Tensor):
                                     print(outputs[0]["scores"], boxes)
-                                    metrics.show(visual)
+                                    image_utils.show(visual)
 
                     if outputs[0]["scores"][0] > score_threshold:
                         best_box = outputs[0]["boxes"][0]
                         if crop_enlarge != 1.0:
-                            best_box = metrics.enlarge_box(
+                            best_box = image_utils.enlarge_box(
                                 inputs[0].shape, best_box, crop_enlarge
                             )
                         path_to_save_file = path_to_save + self.fileterd_img_names[i]
-                        metrics.save_boxes_img(path_to_save_file, inputs[0], best_box)
+                        image_utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
 
                 elif remove_empty:
                     os.remove(
