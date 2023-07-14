@@ -53,9 +53,6 @@ def get_model_instance_segmentation(num_classes: int, default: bool):
     return model
 
 
-
-
-
 class LicensePlatesDetection:
     """Used for preparing data and training / eval models"""
 
@@ -157,7 +154,9 @@ class LicensePlatesDetection:
                 for j, outs in enumerate(filtered_outputs):
                     if show_fr > 0:
                         if i % show_fr == 0:
-                            metrics.draw_bboxes(inputs[0], outs[0]["boxes"].unsqueeze(0))
+                            metrics.draw_bboxes(
+                                inputs[0], outs[0]["boxes"].unsqueeze(0)
+                            )
 
                     if save_boxes:
                         path = f"/workspace/alpr/croped_plates/{i}_{j}.jpg"
@@ -302,7 +301,7 @@ class AlprSetupPlateCrop:
                 if i % 100 == 0:
                     time_end = time.time()
                     print(f"images done -> {i}, time_spent: {time_end-time_start}")
-
+        time_end = time.time()
         print(f"time -> {time_end - time_start}")
 
     def load_state_dict(self, path_to_weights: str):
