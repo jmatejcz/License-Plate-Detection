@@ -3,8 +3,29 @@ import torch
 import matplotlib.pyplot as plt
 from torchvision.utils import draw_bounding_boxes
 import cv2
+import os
+from PIL import Image
 import torchvision.transforms.functional as F
 import numpy as np
+
+
+
+def load_images(folder_path: str, idx_start: int, idx_end: int)-> tuple:
+    """Loads certain amount of sorted images from folder and their filenames
+
+    :rtype: tuple <list, list>
+    """
+    images = []
+    filenames = []
+    for file in list(sorted(os.listdir(folder_path))[idx_start:idx_end]):
+        try:
+            image = Image.open(f"{folder_path}{file}").convert(
+                "RGB"
+            )
+            images.append(image)
+            filenames.append(f"{folder_path}{file}")
+        except:
+            print(f"could not open {folder_path}{file}")
 
 
 def show(imgs):
@@ -27,11 +48,15 @@ def draw_bboxes(image, boxes, labels=None, scores=None):
         visual = draw_bounding_boxes(image, boxes, colors=(255, 0, 0), width=2)
     return visual
 
-
-def save_boxes_img(path_to_save: str, image: torch.Tensor, boxes: torch.Tensor):
+def get_box_img(image: torch.Tensor, boxes: torch.Tensor):
     croped_img = image[:, int(boxes[1]) : int(boxes[3]), int(boxes[0]) : int(boxes[2])]
     croped_img = F.to_pil_image(croped_img)
-    cv2.imwrite(path_to_save, np.asarray(croped_img))
+    return croped_img
+
+# def save_boxes_img(path_to_save: str, image: torch.Tensor, boxes: torch.Tensor):
+#     croped_img = image[:, int(boxes[1]) : int(boxes[3]), int(boxes[0]) : int(boxes[2])]
+#     croped_img = F.to_pil_image(croped_img)
+#     cv2.imwrite(path_to_save, np.asarray(croped_img))
 
 
 
