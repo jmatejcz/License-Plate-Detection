@@ -194,8 +194,10 @@ class AlprSetupTraining(LicensePlatesDetection):
             train_split=0.8,
         )
 
-class PlateCropper():
+
+class PlateCropper:
     "crops plates from given images"
+
     def __init__(self, model, images: list) -> None:
         self.images = images
         self.model = model
@@ -208,7 +210,7 @@ class PlateCropper():
             batch_size=1,
             shuffle=False,
         )
-    
+
     def crop_plates(
         self,
         score_threshold: float = 0.9,
@@ -235,13 +237,14 @@ class PlateCropper():
                             best_box = image_utils.enlarge_box(
                                 inputs[0].shape, best_box, crop_enlarge
                             )
-                            box_img = image_utils.get_box_img(inputs[0], best_box)
+                        box_img = image_utils.get_box_img(inputs[0], best_box)
                         self.croped_plates.append(box_img)
-        
+
         return self.croped_plates
-    
+
     def load_state_dict(self, path_to_weights: str):
         self.model.load_state_dict(torch.load(path_to_weights))
+
 
 class AlprSetupPlateCrop(PlateCropper):
     "Extended version of PlateCropper, can save results, tracks time, shows images and results"
@@ -252,7 +255,9 @@ class AlprSetupPlateCrop(PlateCropper):
         self.root = root
         self.path_to_imgs = path_to_imgs
         self.fileterd_img_names = []
-        self.ordered_images, self.fileterd_img_names = image_utils.load_images(root+path_to_imgs, idx_start=idx_start, idx_end=idx_end)
+        self.ordered_images, self.fileterd_img_names = image_utils.load_images(
+            root + path_to_imgs, idx_start=idx_start, idx_end=idx_end
+        )
         super().__init__(model=model, images=self.ordered_images)
 
     def crop_plates(
