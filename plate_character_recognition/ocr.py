@@ -119,10 +119,12 @@ class BidirectionalLSTM(nn.Module):
 
 
 class CRNN(nn.Module):
-    def __init__(self, opt, leakyRelu=False):
+    def __init__(
+        self, imgH: int, nChannels: int, nHidden: int, nClasses: int, leakyRelu=False
+    ):
         super(CRNN, self).__init__()
 
-        assert opt["imgH"] % 16 == 0, "imgH has to be a multiple of 16"
+        assert imgH % 16 == 0, "imgH has to be a multiple of 16"
 
         ks = [3, 3, 3, 3, 3, 3, 2]
         #         ks = [3, 3, 3, 3, 3, 3, 1]
@@ -133,7 +135,7 @@ class CRNN(nn.Module):
         cnn = nn.Sequential()
 
         def convRelu(i, batchNormalization=False):
-            nIn = opt["nChannels"] if i == 0 else nm[i - 1]
+            nIn = nChannels if i == 0 else nm[i - 1]
             nOut = nm[i]
             cnn.add_module(
                 "conv{0}".format(i), nn.Conv2d(nIn, nOut, ks[i], ss[i], ps[i])
@@ -163,8 +165,8 @@ class CRNN(nn.Module):
         self.cnn = cnn
         self.rnn = nn.Sequential()
         self.rnn = nn.Sequential(
-            BidirectionalLSTM(opt["nHidden"] * 2, opt["nHidden"], opt["nHidden"]),
-            BidirectionalLSTM(opt["nHidden"], opt["nHidden"], opt["nClasses"]),
+            BidirectionalLSTM(nHidden * 2, nHidden, nHidden),
+            BidirectionalLSTM(nHidden, nHidden, nClasses),
         )
 
     def forward(self, input):
@@ -467,14 +469,18 @@ class Learner(object):
 class PlateOcr:
     def __init__(self, model, images, batch_size: int) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-        self.model = model
-
         alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
+        self.model = CRNN(
+            imgH=images[0][0],
+            nChannels=images[0][2],
+            nHidden=256,
+            nClasses=len(alphabet),
+        )
+
         self.converter = OCRLabelConverter(alphabet)
         self.evaluator = Eval()
-        self.data = InferenceDataset(args)
+        self.data = InferenceDataset(images)
         self.criterion = CustomCTCLoss()
-        # collate_fn = SynthCollator()
         self.dataloader = torch.utils.data.DataLoader(
             self.data, batch_size=batch_size, shuffle=False
         )
@@ -485,7 +491,7 @@ class PlateOcr:
 
         for i, batch in enumerate(tqdm(self.dataloader)):
             input_ = batch["img"].to(self.device)
-            logits = model(input_).transpose(1, 0)
+            logits = self.model(input_).transpose(1, 0)
             logits = torch.nn.functional.log_softmax(logits, 2)
             logits = logits.contiguous().cpu()
 
@@ -557,24 +563,23 @@ args = {
     "cuda": True,
     "schedule": False,
 }
-data = SynthDataset(args)
-args["collate_fn"] = SynthCollator()
-train_split = int(0.9 * len(data))
-val_split = len(data) - train_split
-args["data_train"], args["data_val"] = random_split(data, (train_split, val_split))
+# data = SynthDataset(args)
+# args["collate_fn"] = SynthCollator()
+# train_split = int(0.9 * len(data))
+# val_split = len(data) - train_split
+# args["data_train"], args["data_val"] = random_split(data, (train_split, val_split))
 # print(
 #     "Traininig Data Size:{}\nVal Data Size:{}".format(
 #         len(args["data_train"]), len(args["data_val"])
 #     )
 # )
-args["alphabet"] = alphabet
+# args["alphabet"] = alphabet
 
 
-model = CRNN(args)
-args["criterion"] = CustomCTCLoss()
-savepath = os.path.join(args["save_dir"], args["name"])
-gmkdir(savepath)
-gmkdir(args["log_dir"])
-optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"])
-learner = Learner(model, optimizer, savepath=savepath, resume=args["resume"])
-learner.fit(args)
+# args["criterion"] = CustomCTCLoss()
+# savepath = os.path.join(args["save_dir"], args["name"])
+# gmkdir(savepath)
+# gmkdir(args["log_dir"])
+# optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"])
+# learner = Learner(model, optimizer, savepath=savepath, resume=args["resume"])
+# learner.fit(args)
