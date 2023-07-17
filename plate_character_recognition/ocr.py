@@ -16,12 +16,38 @@ from torch.optim.lr_scheduler import CosineAnnealingLR
 from ai_utils.transforms import EarlyStopping, AverageMeter, Eval, OCRLabelConverter
 from utils.utils import gmkdir
 from tqdm import *
+from torchvision.utils import make_grid
+
+
+class InferenceDataset(Dataset):
+    def __init__(self, images: list):
+        super(SynthDataset, self).__init__()
+        transform_list = [
+            transforms.Grayscale(1),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,)),
+        ]
+        self.images = images
+        self.transform = transforms.Compose(transform_list)
+        self.collate_fn = SynthCollator()
+
+    def __len__(self):
+        return self.nSamples
+
+    def __getitem__(self, index):
+        assert index <= len(self), "index range error"
+        img = self.images[index]
+        if self.transform is not None:
+            img = self.transform(img)
+
+        item = {"img": img, "idx": index}
+        return item
 
 
 class SynthDataset(Dataset):
-    def __init__(self, opt):
+    def __init__(self, path: str, imgdir: str):
         super(SynthDataset, self).__init__()
-        self.path = os.path.join(opt["path"], opt["imgdir"])
+        self.path = os.path.join(path, imgdir)
         self.images = os.listdir(self.path)
         self.nSamples = len(self.images)
         f = lambda x: os.path.join(self.path, x)
@@ -436,6 +462,81 @@ class Learner(object):
 
     def save(self, epoch):
         self.saver(self.val_loss, epoch, self.model, self.optimizer)
+
+
+class PlateOcr:
+    def __init__(self, model, images, batch_size: int) -> None:
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        self.model = model
+
+        alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
+        self.converter = OCRLabelConverter(alphabet)
+        self.evaluator = Eval()
+        self.data = InferenceDataset(args)
+        self.criterion = CustomCTCLoss()
+        # collate_fn = SynthCollator()
+        self.dataloader = torch.utils.data.DataLoader(
+            self.data, batch_size=batch_size, shuffle=False
+        )
+
+    def ocr_plates(self):
+        self.model.eval()
+        self.model = self.model.to(self.device)
+
+        for i, batch in enumerate(tqdm(self.dataloader)):
+            input_ = batch["img"].to(self.device)
+            logits = model(input_).transpose(1, 0)
+            logits = torch.nn.functional.log_softmax(logits, 2)
+            logits = logits.contiguous().cpu()
+
+
+# def get_accuracy(args):
+#     loader = torch.utils.data.DataLoader(
+#         args["data"], batch_size=args["batch_size"], collate_fn=args["collate_fn"]
+#     )
+#     model = args["model"]
+#     model.eval()
+#     model = model.to(device)
+#     converter = OCRLabelConverter(args["alphabet"])
+#     evaluator = Eval()
+#     labels, predictions, images = [], [], []
+#     for iteration, batch in enumerate(tqdm(loader)):
+#         input_, targets = batch["img"].to(device), batch["label"]
+#         images.extend(input_.squeeze().detach())
+#         labels.extend(targets)
+#         targets, lengths = converter.encode(targets)
+#         logits = model(input_).transpose(1, 0)
+#         logits = torch.nn.functional.log_softmax(logits, 2)
+#         logits = logits.contiguous().cpu()
+#         T, B, H = logits.size()
+#         pred_sizes = torch.LongTensor([T for i in range(B)])
+#         probs, pos = logits.max(2)
+#         pos = pos.transpose(1, 0).contiguous().view(-1)
+#         sim_preds = converter.decode(pos.data, pred_sizes.data, raw=False)
+#         predictions.extend(sim_preds)
+
+#     make_grid(images[:10], nrow=3)
+#     fig = plt.figure(figsize=(8, 8))
+#     columns = 5
+#     rows = 5
+#     pairs = list(zip(images, predictions))
+#     indices = np.random.permutation(len(pairs))
+#     #     print(indices)
+#     #     for i in range(1, columns*rows +1):
+#     for i in range(1, len(indices)):
+#         img = images[indices[i]].cpu()
+#         img = (img - img.min()) / (img.max() - img.min())
+#         img = np.array(img * 255.0, dtype=np.uint8)
+#         fig.add_subplot(rows, columns, i)
+#         plt.title(predictions[indices[i]])
+#         plt.axis("off")
+#         plt.imshow(img, cmap="gray")
+#     plt.show()
+#     ca = np.mean((list(map(evaluator.char_accuracy, list(zip(predictions, labels))))))
+#     wa = np.mean(
+#         (list(map(evaluator.word_accuracy_line, list(zip(predictions, labels)))))
+#     )
+#     return ca, wa
 
 
 alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
