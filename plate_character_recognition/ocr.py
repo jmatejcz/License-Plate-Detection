@@ -13,21 +13,25 @@ from torch.nn.utils.clip_grad import clip_grad_norm_
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-from ai_utils.transforms import EarlyStopping, AverageMeter, Eval, OCRLabelConverter
-from utils.utils import gmkdir
+from alpr.ai_utils.transforms import EarlyStopping, AverageMeter, Eval, OCRLabelConverter
+from alpr.utils.utils import gmkdir
 from tqdm import *
 from torchvision.utils import make_grid
 
+import torchvision.transforms.functional as F
+import matplotlib.pyplot as plt
 
 class InferenceDataset(Dataset):
     def __init__(self, images: list):
-        super(SynthDataset, self).__init__()
+        super().__init__()
         transform_list = [
             transforms.Grayscale(1),
             transforms.ToTensor(),
             transforms.Normalize((0.5,), (0.5,)),
+            transforms.Resize((32, 80))
         ]
         self.images = images
+        self.nSamples = len(self.images)
         self.transform = transforms.Compose(transform_list)
         self.collate_fn = SynthCollator()
 
@@ -37,9 +41,9 @@ class InferenceDataset(Dataset):
     def __getitem__(self, index):
         assert index <= len(self), "index range error"
         img = self.images[index]
+        img = F.to_pil_image(img)
         if self.transform is not None:
             img = self.transform(img)
-
         item = {"img": img, "idx": index}
         return item
 
@@ -123,7 +127,6 @@ class CRNN(nn.Module):
         self, imgH: int, nChannels: int, nHidden: int, nClasses: int, leakyRelu=False
     ):
         super(CRNN, self).__init__()
-
         assert imgH % 16 == 0, "imgH has to be a multiple of 16"
 
         ks = [3, 3, 3, 3, 3, 3, 2]
@@ -467,34 +470,44 @@ class Learner(object):
 
 
 class PlateOcr:
-    def __init__(self, model, images, batch_size: int) -> None:
+    def __init__(self) -> None:
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
         alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
         self.model = CRNN(
-            imgH=images[0][0],
-            nChannels=images[0][2],
+            imgH=32,
+            nChannels=1,
             nHidden=256,
             nClasses=len(alphabet),
         )
 
         self.converter = OCRLabelConverter(alphabet)
-        self.evaluator = Eval()
+        
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path)
+        self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+    
+    def ocr_plates(self, images: list):
         self.data = InferenceDataset(images)
-        self.criterion = CustomCTCLoss()
         self.dataloader = torch.utils.data.DataLoader(
-            self.data, batch_size=batch_size, shuffle=False
+            self.data, batch_size=1, shuffle=False
         )
-
-    def ocr_plates(self):
         self.model.eval()
         self.model = self.model.to(self.device)
-
-        for i, batch in enumerate(tqdm(self.dataloader)):
-            input_ = batch["img"].to(self.device)
-            logits = self.model(input_).transpose(1, 0)
-            logits = torch.nn.functional.log_softmax(logits, 2)
-            logits = logits.contiguous().cpu()
-
+        predictions, images = [], []
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(self.dataloader)):
+                input_ = batch["img"].to(self.device)
+                logits = self.model(input_).transpose(1, 0)
+                logits = torch.nn.functional.log_softmax(logits, 2)
+                logits = logits.contiguous().cpu()
+                T, B, H = logits.size()
+                pred_sizes = torch.LongTensor([T for i in range(B)])
+                probs, pos = logits.max(2)
+                pos = pos.transpose(1, 0).contiguous().view(-1)
+                sim_preds = self.converter.decode(pos.data, pred_sizes.data, raw=False)
+                predictions.append(sim_preds)
+        return predictions
+   
 
 # def get_accuracy(args):
 #     loader = torch.utils.data.DataLoader(
@@ -545,24 +558,24 @@ class PlateOcr:
 #     return ca, wa
 
 
-alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
-args = {
-    "name": "only_good_wo_contrast",
-    "path": "./data",
-    "imgdir": "train",
-    "imgH": 32,
-    "nChannels": 1,
-    "nHidden": 256,
-    "nClasses": len(alphabet),
-    "lr": 0.001,
-    "epochs": 1200,
-    "batch_size": 128,
-    "save_dir": "./checkpoints/",
-    "log_dir": "./logs",
-    "resume": True,
-    "cuda": True,
-    "schedule": False,
-}
+# alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
+# args = {
+#     "name": "only_good_wo_contrast",
+#     "path": "./data",
+#     "imgdir": "train",
+#     "imgH": 32,
+#     "nChannels": 1,
+#     "nHidden": 256,
+#     "nClasses": len(alphabet),
+#     "lr": 0.001,
+#     "epochs": 1200,
+#     "batch_size": 128,
+#     "save_dir": "./checkpoints/",
+#     "log_dir": "./logs",
+#     "resume": True,
+#     "cuda": True,
+#     "schedule": False,
+# }
 # data = SynthDataset(args)
 # args["collate_fn"] = SynthCollator()
 # train_split = int(0.9 * len(data))

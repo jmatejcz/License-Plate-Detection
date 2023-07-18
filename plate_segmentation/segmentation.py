@@ -237,9 +237,10 @@ class PlateCropper:
                             best_box = image_utils.enlarge_box(
                                 inputs[0].shape, best_box, crop_enlarge
                             )
-                        box_img = image_utils.get_box_img(inputs[0], best_box)
-                        self.croped_plates.append(box_img)
-
+                        box_img = image_utils.get_box_img(inputs[0], best_box)*255
+                        self.croped_plates.append(box_img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8))
+                    else:
+                        pass
         return self.croped_plates
 
     def load_state_dict(self, path_to_weights: str):
@@ -310,7 +311,7 @@ class AlprSetupPlateCrop(PlateCropper):
                         box_img = image_utils.get_box_img(inputs[0], best_box)
                         cv2.imwrite(path_to_save_file, np.asarray(box_img))
                         # image_utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
-
+                        
                 elif remove_empty:
                     os.remove(
                         f"{self.root}{self.path_to_imgs}{self.fileterd_img_names[i]}"
