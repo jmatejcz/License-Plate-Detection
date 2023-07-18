@@ -8,7 +8,8 @@ from PIL import Image
 import torchvision.transforms.functional as F
 import numpy as np
 
-
+def scale_to_multiple_of_16(img):
+    pass
 
 def load_images(folder_path: str, idx_start: int, idx_end: int)-> tuple:
     """Loads certain amount of sorted images from folder and their filenames
@@ -50,7 +51,7 @@ def draw_bboxes(image, boxes, labels=None, scores=None):
 
 def get_box_img(image: torch.Tensor, boxes: torch.Tensor):
     croped_img = image[:, int(boxes[1]) : int(boxes[3]), int(boxes[0]) : int(boxes[2])]
-    croped_img = F.to_pil_image(croped_img)
+#     croped_img = F.to_pil_image(croped_img)
     return croped_img
 
 # def save_boxes_img(path_to_save: str, image: torch.Tensor, boxes: torch.Tensor):
