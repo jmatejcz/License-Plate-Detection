@@ -8,6 +8,26 @@ from PIL import Image
 import torchvision.transforms.functional as F
 import numpy as np
 
+
+def save_frames(video_folder, video_filename, save_path):
+    frames = []
+    print(video_folder + video_filename)
+    vid_capture= cv2.VideoCapture(video_folder+video_filename)
+    count = 0
+    while(vid_capture.isOpened()):
+        ret, frame = vid_capture.read()
+        print(ret)
+        if ret == True:
+            print("xd")
+            cv2.imwrite(f"{save_path}{video_filename}_{count}.jpg", frame)
+            frames.append(frame)
+        else:
+            cap.release()
+            cv2.destroyAllWindows()
+        count += 1
+    return frames
+
+
 def scale_to_multiple_of_16(img):
     pass
 
