@@ -1,11 +1,9 @@
 import os
-import sys
 from PIL import Image
 import numpy as np
 import math
 from collections import OrderedDict
 import logging
-
 
 import torch
 import torch.nn as nn
@@ -15,16 +13,45 @@ from torch.nn.utils.clip_grad import clip_grad_norm_
 from torch.utils.data import random_split
 from torch.optim.lr_scheduler import CosineAnnealingLR
 
-# sys.path.insert(0, "../")
-from src.utils.utils import AverageMeter, Eval, OCRLabelConverter
-from src.utils.utils import EarlyStopping, gmkdir
+from alpr.ai_utils.transforms import EarlyStopping, AverageMeter, Eval, OCRLabelConverter
+from alpr.utils.utils import gmkdir
 from tqdm import *
+from torchvision.utils import make_grid
+
+import torchvision.transforms.functional as F
+import matplotlib.pyplot as plt
+
+class InferenceDataset(Dataset):
+    def __init__(self, images: list):
+        super().__init__()
+        transform_list = [
+            transforms.Grayscale(1),
+            transforms.ToTensor(),
+            transforms.Normalize((0.5,), (0.5,)),
+            transforms.Resize((32, 80))
+        ]
+        self.images = images
+        self.nSamples = len(self.images)
+        self.transform = transforms.Compose(transform_list)
+        self.collate_fn = SynthCollator()
+
+    def __len__(self):
+        return self.nSamples
+
+    def __getitem__(self, index):
+        assert index <= len(self), "index range error"
+        img = self.images[index]
+        img = F.to_pil_image(img)
+        if self.transform is not None:
+            img = self.transform(img)
+        item = {"img": img, "idx": index}
+        return item
 
 
 class SynthDataset(Dataset):
-    def __init__(self, opt):
+    def __init__(self, path: str, imgdir: str):
         super(SynthDataset, self).__init__()
-        self.path = os.path.join(opt["path"], opt["imgdir"])
+        self.path = os.path.join(path, imgdir)
         self.images = os.listdir(self.path)
         self.nSamples = len(self.images)
         f = lambda x: os.path.join(self.path, x)
@@ -96,10 +123,11 @@ class BidirectionalLSTM(nn.Module):
 
 
 class CRNN(nn.Module):
-    def __init__(self, opt, leakyRelu=False):
+    def __init__(
+        self, imgH: int, nChannels: int, nHidden: int, nClasses: int, leakyRelu=False
+    ):
         super(CRNN, self).__init__()
-
-        assert opt["imgH"] % 16 == 0, "imgH has to be a multiple of 16"
+        assert imgH % 16 == 0, "imgH has to be a multiple of 16"
 
         ks = [3, 3, 3, 3, 3, 3, 2]
         #         ks = [3, 3, 3, 3, 3, 3, 1]
@@ -110,7 +138,7 @@ class CRNN(nn.Module):
         cnn = nn.Sequential()
 
         def convRelu(i, batchNormalization=False):
-            nIn = opt["nChannels"] if i == 0 else nm[i - 1]
+            nIn = nChannels if i == 0 else nm[i - 1]
             nOut = nm[i]
             cnn.add_module(
                 "conv{0}".format(i), nn.Conv2d(nIn, nOut, ks[i], ss[i], ps[i])
@@ -140,8 +168,8 @@ class CRNN(nn.Module):
         self.cnn = cnn
         self.rnn = nn.Sequential()
         self.rnn = nn.Sequential(
-            BidirectionalLSTM(opt["nHidden"] * 2, opt["nHidden"], opt["nHidden"]),
-            BidirectionalLSTM(opt["nHidden"], opt["nHidden"], opt["nClasses"]),
+            BidirectionalLSTM(nHidden * 2, nHidden, nHidden),
+            BidirectionalLSTM(nHidden, nHidden, nClasses),
         )
 
     def forward(self, input):
@@ -441,42 +469,130 @@ class Learner(object):
         self.saver(self.val_loss, epoch, self.model, self.optimizer)
 
 
-alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
-args = {
-    "name": "only_good_wo_contrast",
-    "path": "./data",
-    "imgdir": "train",
-    "imgH": 32,
-    "nChannels": 1,
-    "nHidden": 256,
-    "nClasses": len(alphabet),
-    "lr": 0.001,
-    "epochs": 1200,
-    "batch_size": 128,
-    "save_dir": "./checkpoints/",
-    "log_dir": "./logs",
-    "resume": True,
-    "cuda": True,
-    "schedule": False,
-}
-data = SynthDataset(args)
-args["collate_fn"] = SynthCollator()
-train_split = int(0.9 * len(data))
-val_split = len(data) - train_split
-args["data_train"], args["data_val"] = random_split(data, (train_split, val_split))
+class PlateOcr:
+    def __init__(self) -> None:
+        self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+        alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
+        self.model = CRNN(
+            imgH=32,
+            nChannels=1,
+            nHidden=256,
+            nClasses=len(alphabet),
+        )
+
+        self.converter = OCRLabelConverter(alphabet)
+        
+    def load_checkpoint(self, path):
+        checkpoint = torch.load(path)
+        self.model.load_state_dict(checkpoint['state_dict'], strict=False)
+    
+    def ocr_plates(self, images: list):
+        self.data = InferenceDataset(images)
+        self.dataloader = torch.utils.data.DataLoader(
+            self.data, batch_size=1, shuffle=False
+        )
+        self.model.eval()
+        self.model = self.model.to(self.device)
+        predictions, images = [], []
+        with torch.no_grad():
+            for i, batch in enumerate(tqdm(self.dataloader)):
+                input_ = batch["img"].to(self.device)
+                logits = self.model(input_).transpose(1, 0)
+                logits = torch.nn.functional.log_softmax(logits, 2)
+                logits = logits.contiguous().cpu()
+                T, B, H = logits.size()
+                pred_sizes = torch.LongTensor([T for i in range(B)])
+                probs, pos = logits.max(2)
+                pos = pos.transpose(1, 0).contiguous().view(-1)
+                sim_preds = self.converter.decode(pos.data, pred_sizes.data, raw=False)
+                predictions.append(sim_preds)
+        return predictions
+   
+
+# def get_accuracy(args):
+#     loader = torch.utils.data.DataLoader(
+#         args["data"], batch_size=args["batch_size"], collate_fn=args["collate_fn"]
+#     )
+#     model = args["model"]
+#     model.eval()
+#     model = model.to(device)
+#     converter = OCRLabelConverter(args["alphabet"])
+#     evaluator = Eval()
+#     labels, predictions, images = [], [], []
+#     for iteration, batch in enumerate(tqdm(loader)):
+#         input_, targets = batch["img"].to(device), batch["label"]
+#         images.extend(input_.squeeze().detach())
+#         labels.extend(targets)
+#         targets, lengths = converter.encode(targets)
+#         logits = model(input_).transpose(1, 0)
+#         logits = torch.nn.functional.log_softmax(logits, 2)
+#         logits = logits.contiguous().cpu()
+#         T, B, H = logits.size()
+#         pred_sizes = torch.LongTensor([T for i in range(B)])
+#         probs, pos = logits.max(2)
+#         pos = pos.transpose(1, 0).contiguous().view(-1)
+#         sim_preds = converter.decode(pos.data, pred_sizes.data, raw=False)
+#         predictions.extend(sim_preds)
+
+#     make_grid(images[:10], nrow=3)
+#     fig = plt.figure(figsize=(8, 8))
+#     columns = 5
+#     rows = 5
+#     pairs = list(zip(images, predictions))
+#     indices = np.random.permutation(len(pairs))
+#     #     print(indices)
+#     #     for i in range(1, columns*rows +1):
+#     for i in range(1, len(indices)):
+#         img = images[indices[i]].cpu()
+#         img = (img - img.min()) / (img.max() - img.min())
+#         img = np.array(img * 255.0, dtype=np.uint8)
+#         fig.add_subplot(rows, columns, i)
+#         plt.title(predictions[indices[i]])
+#         plt.axis("off")
+#         plt.imshow(img, cmap="gray")
+#     plt.show()
+#     ca = np.mean((list(map(evaluator.char_accuracy, list(zip(predictions, labels))))))
+#     wa = np.mean(
+#         (list(map(evaluator.word_accuracy_line, list(zip(predictions, labels)))))
+#     )
+#     return ca, wa
+
+
+# alphabet = """Only thewigsofrcvdampbkuq.$A-210xT5'MDL,RYHJ"ISPWENj&BC93VGFKz();#:!7U64Q8?+*ZX/%"""
+# args = {
+#     "name": "only_good_wo_contrast",
+#     "path": "./data",
+#     "imgdir": "train",
+#     "imgH": 32,
+#     "nChannels": 1,
+#     "nHidden": 256,
+#     "nClasses": len(alphabet),
+#     "lr": 0.001,
+#     "epochs": 1200,
+#     "batch_size": 128,
+#     "save_dir": "./checkpoints/",
+#     "log_dir": "./logs",
+#     "resume": True,
+#     "cuda": True,
+#     "schedule": False,
+# }
+# data = SynthDataset(args)
+# args["collate_fn"] = SynthCollator()
+# train_split = int(0.9 * len(data))
+# val_split = len(data) - train_split
+# args["data_train"], args["data_val"] = random_split(data, (train_split, val_split))
 # print(
 #     "Traininig Data Size:{}\nVal Data Size:{}".format(
 #         len(args["data_train"]), len(args["data_val"])
 #     )
 # )
-args["alphabet"] = alphabet
+# args["alphabet"] = alphabet
 
 
-model = CRNN(args)
-args["criterion"] = CustomCTCLoss()
-savepath = os.path.join(args["save_dir"], args["name"])
-gmkdir(savepath)
-gmkdir(args["log_dir"])
-optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"])
-learner = Learner(model, optimizer, savepath=savepath, resume=args["resume"])
-learner.fit(args)
+# args["criterion"] = CustomCTCLoss()
+# savepath = os.path.join(args["save_dir"], args["name"])
+# gmkdir(savepath)
+# gmkdir(args["log_dir"])
+# optimizer = torch.optim.Adam(model.parameters(), lr=args["lr"])
+# learner = Learner(model, optimizer, savepath=savepath, resume=args["resume"])
+# learner.fit(args)
