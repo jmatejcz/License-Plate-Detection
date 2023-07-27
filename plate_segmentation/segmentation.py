@@ -46,7 +46,7 @@ def get_model_instance_segmentation(num_classes: int, default: bool):
         )
     else:
         model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(weights=None)
-    num_classes = 2  # 1 class (person) + background
+    num_classes = 2  # 1 class licensese plate + background
     in_features = model.roi_heads.box_predictor.cls_score.in_features
     # replace the pre-trained head with a new one
     model.roi_heads.box_predictor = FastRCNNPredictor(in_features, num_classes)
@@ -228,7 +228,8 @@ class PlateCropper:
         """
         self.model.eval()
         self.model = self.model.to(self.device)
-        self.croped_plates = []
+        croped_plates = []
+        scores = []
 
         with torch.no_grad():
             for i, inputs in enumerate(self.dataloader):
@@ -243,10 +244,11 @@ class PlateCropper:
                                 inputs[0].shape, best_box, crop_enlarge
                             )
                         box_img = image_utils.get_box_img(inputs[0], best_box)*255
-                        self.croped_plates.append(box_img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8))
+                        croped_plates.append(box_img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8))
+                        scores.append(outputs[0]["scores"][0])
                     else:
-                        pass
-        return self.croped_plates
+                        print(f"No plate detected in {i+1} image")
+        return croped_plates, scores
 
     def load_state_dict(self, path_to_weights: str):
         self.model.load_state_dict(torch.load(path_to_weights))

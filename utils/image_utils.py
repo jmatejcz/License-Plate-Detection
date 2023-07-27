@@ -7,6 +7,7 @@ import os
 from PIL import Image
 import torchvision.transforms.functional as F
 import numpy as np
+import math
 
 
 def save_frames(video_folder, video_filename, save_path):
@@ -60,6 +61,17 @@ def show(imgs):
         axs[0, i].set(xticklabels=[], yticklabels=[], xticks=[], yticks=[])
     plt.show()
 
+def show_multiple_imgs(images, titles = None, inch_size = (40, 40)):
+    cols = 5
+    rows = math.ceil(len(images)/5)
+    fig, axs = plt.subplots(rows, cols)
+    fig.set_size_inches(*inch_size)
+    for i, img in enumerate(images):
+        if titles:
+            axs[i//cols, i%cols].title.set_text(titles[i])
+        else:    
+            axs[i//cols, i%cols].title.set_text(f"{i+1}")
+        axs[i//cols, i%cols].imshow(img)
 
 def draw_bboxes(image, boxes, labels=None, scores=None):
     image = torch.as_tensor(image * 255, dtype=torch.uint8)
