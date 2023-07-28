@@ -9,17 +9,10 @@ import torchvision
 from torchvision.models.detection.faster_rcnn import (
     FastRCNNPredictor,
 )
-<<<<<<< HEAD
-import alpr.utils.metrics as metrics
 import alpr.ai_utils.transforms as transforms
+import alpr.ai_utils as ai_utils
+import alpr.utils.image_utils as image_utils
 from alpr.plate_segmentation.datasets import InstanceSegmentationDataset
-=======
-import utils.metrics as metrics
-import ai_utils.transforms as transforms
-from datasets import InstanceSegmentationDataset
->>>>>>> 1074271 (imports fixed)
-
-
 #     ⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⣤⣤⣤⣤⣶⣦⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⡿⠛⠉⠙⠛⠛⠛⠛⠻⢿⣿⣷⣤⡀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⠋⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⠈⢻⣿⣿⡄⠀⠀⠀⠀
@@ -154,10 +147,11 @@ class LicensePlatesDetection:
                 for j, outs in enumerate(filtered_outputs):
                     if show_fr > 0:
                         if i % show_fr == 0:
-                            image_utils.draw_bboxes(
+                            visual = image_utils.draw_bboxes(
                                 inputs[0], outs[0]["boxes"].unsqueeze(0)
                             )
-
+                            image_utils.show(visual)
+                            
                     if save_boxes:
                         path = f"/workspace/alpr/croped_plates/{i}_{j}.jpg"
                         image_utils.save_boxes_img(path, inputs[0], outs[0]["boxes"])
@@ -165,7 +159,7 @@ class LicensePlatesDetection:
                     if len(filtered_outputs) > 0:
                         iou_scores.append(
                             # TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
-                            image_utils.get_IoU(
+                            ai_utils.metrics.get_IoU(
                                 outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0]
                             )
                         )
@@ -316,8 +310,8 @@ class AlprSetupPlateCrop(PlateCropper):
                             )
                         path_to_save_file = path_to_save + self.fileterd_img_names[i]
                         box_img = image_utils.get_box_img(inputs[0], best_box)
-                        cv2.imwrite(path_to_save_file, np.asarray(box_img))
-                        # image_utils.save_boxes_img(path_to_save_file, inputs[0], best_box)
+                        box_img = 255*np.transpose(box_img.cpu().numpy(), (1, 2, 0))
+                        cv2.imwrite(path_to_save_file, box_img)
                         
                 elif remove_empty:
                     os.remove(

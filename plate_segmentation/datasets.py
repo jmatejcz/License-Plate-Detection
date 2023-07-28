@@ -2,7 +2,7 @@ import os
 import torch
 from PIL import Image
 import json
-import alpr.utils.metrics as metrics
+import alpr.ai_utils.metrics as metrics
 
 class InstanceSegmentationDataset(torch.utils.data.Dataset):
     def __init__(self, images: list, transforms):
