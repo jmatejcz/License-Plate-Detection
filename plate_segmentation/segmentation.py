@@ -182,11 +182,12 @@ class AlprSetupTraining(LicensePlatesDetection):
         train_split=0.8,
     ):
         self.model_name = model_name
-        train_split = int(train_split * len(dataset))
-        indices_train = torch.randperm(train_split).tolist()
-        indices_test = torch.randperm(len(dataset) - train_split).tolist()
-        train_set = torch.utils.data.Subset(dataset, indices_train)
-        test_set = torch.utils.data.Subset(dataset, indices_test)
+#         train_split = int(train_split * len(dataset))
+#         indices_train = torch.randperm(train_split).tolist()
+#         indices_test = torch.randperm(len(dataset) - train_split).tolist()
+        train_set, test_set = torch.utils.data.random_split(dataset, [train_split, 1-train_split])
+#         t_set = torch.utils.data.Subset(dataset, indices_train)
+#         test_set = torch.utils.data.Subset(dataset, indices_test)
         super().__init__(
             model=model,
             train_set=train_set,
