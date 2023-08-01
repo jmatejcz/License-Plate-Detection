@@ -50,7 +50,7 @@ class LicensePlatesDetection:
     """Used for preparing data and training / eval models"""
 
     def __init__(
-        self, model, train_set, test_set, batch_size, model_name=None, train_split=0.8
+        self, model, train_set, test_set, batch_size, model_name=None
     ):
         self.model = model
         train_dataloader = torch.utils.data.DataLoader(
@@ -76,18 +76,18 @@ class LicensePlatesDetection:
     def load_state_dict(self, path_to_weights: str):
         self.model.load_state_dict(torch.load(path_to_weights))
 
-    def train(self, num_epochs: int, save_path=None):
+    def train(self, num_epochs: int, save_path=None, show_fr: int=0):
         self.model = self.model.to(self.device)
         self.epochs_losses_train = []
         best_IoU = 0
         start_time = time.time()
 
         for epoch in range(num_epochs):
-            loss_value = self.train_epoch()
+            loss_value = self.train_epoch(show_fr=show_fr)
             self.epochs_losses_train.append(loss_value)
             print(f"train_epoch: {epoch}, loss: {loss_value:.4f}")
 
-            IoUs = self.eval(score_threshold=0.7)
+            IoUs = self.eval(score_threshold=0.9, show_fr=show_fr)
             mean_IoU = np.mean(IoUs)
             print(f"mean_IoU: {mean_IoU}")
             if save_path:
@@ -108,9 +108,11 @@ class LicensePlatesDetection:
 
             if show_fr > 0:
                 if i % show_fr == 0:
-                    image_utils.draw_bboxes(
-                        inputs[0], targets[0]["boxes"], targets[0]["labels"]
-                    )
+                    if targets[0]["boxes"].shape[0] > 0:
+                        visual = image_utils.draw_bboxes(
+                            inputs[0], targets[0]["boxes"], targets[0]["labels"]
+                        )
+                        image_utils.show(visual)
 
             self.optimizer.zero_grad()
             losses_dict = self.model(inputs, targets)
@@ -125,8 +127,7 @@ class LicensePlatesDetection:
         return loss_value
 
     def eval(
-        self, show_fr: int = 0, score_threshold: float = 0.6, save_boxes: bool = False
-    ) -> list:
+        self, show_fr: int = 0, score_threshold: float = 0.9) -> list:
         self.model.eval()
         self.model = self.model.to(self.device)
         iou_scores = []
@@ -147,22 +148,25 @@ class LicensePlatesDetection:
                 for j, outs in enumerate(filtered_outputs):
                     if show_fr > 0:
                         if i % show_fr == 0:
-                            visual = image_utils.draw_bboxes(
-                                inputs[0], outs[0]["boxes"].unsqueeze(0)
-                            )
-                            image_utils.show(visual)
-                            
-                    if save_boxes:
-                        path = f"/workspace/alpr/croped_plates/{i}_{j}.jpg"
-                        image_utils.save_boxes_img(path, inputs[0], outs[0]["boxes"])
+                            if outs[0]["boxes"].shape[0] > 0:
+                                visual = image_utils.draw_bboxes(
+                                    inputs[0], outs[0]["boxes"].unsqueeze(0), color = (0, 0, 255)
+                                )
+                                image_utils.show(visual)
 
                     if len(filtered_outputs) > 0:
-                        iou_scores.append(
-                            # TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
-                            ai_utils.metrics.get_IoU(
-                                outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0]
+                        print(filtered_outputs)
+                        if targets[0]["boxes"].shape[0] < 1:
+                            # no bboxes in target
+                            iou_scores = [0.0]
+                        else:
+                            
+                            iou_scores.append(
+                                # TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
+                                ai_utils.metrics.get_IoU(
+                                    outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0]
+                                )
                             )
-                        )
                     else:
                         iou_scores = [0.0]
 
@@ -173,24 +177,22 @@ class AlprSetupTraining(LicensePlatesDetection):
     def __init__(
         self,
         model,
-        dataset_train,
-        dataset_test,
+        dataset,
         model_name=None,
         batch_size=1,
         train_split=0.8,
     ):
         self.model_name = model_name
-        train_split = int(train_split * len(dataset_train))
+        train_split = int(train_split * len(dataset))
         indices_train = torch.randperm(train_split).tolist()
-        indices_test = torch.randperm(len(dataset_test) - train_split).tolist()
-        train_set = torch.utils.data.Subset(dataset_train, indices_train)
-        test_set = torch.utils.data.Subset(dataset_test, indices_test)
+        indices_test = torch.randperm(len(dataset) - train_split).tolist()
+        train_set = torch.utils.data.Subset(dataset, indices_train)
+        test_set = torch.utils.data.Subset(dataset, indices_test)
         super().__init__(
             model=model,
             train_set=train_set,
             test_set=test_set,
             batch_size=batch_size,
-            train_split=0.8,
         )
 
 
