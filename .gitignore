@@ -1,10 +1,6 @@
 __pycache__/
-<<<<<<< HEAD
-.vscode/
-=======
 .vscode/
 **/.ipynb_checkpoints*
 **/.ipynb_checkpoints/*
 .ipynb_checkpoints
 **/*.ipynb_checkpoints/
->>>>>>> ed3ca3c860f6ea55ab01dad945029555bd9fd3bd
