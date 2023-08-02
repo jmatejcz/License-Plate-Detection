@@ -13,6 +13,7 @@ import alpr.ai_utils.transforms as transforms
 import alpr.ai_utils as ai_utils
 import alpr.utils.image_utils as image_utils
 from alpr.plate_segmentation.datasets import InstanceSegmentationDataset
+
 #     ⠀⠀⠀⠀⠀⠀⠀⠀⣠⣤⣤⣤⣤⣤⣶⣦⣤⣄⡀⠀⠀⠀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⢀⣴⣿⡿⠛⠉⠙⠛⠛⠛⠛⠻⢿⣿⣷⣤⡀⠀⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠀⣼⣿⠋⠀⠀⠀⠀⠀⠀⠀⢀⣀⣀⠈⢻⣿⣿⡄⠀⠀⠀⠀
@@ -32,8 +33,11 @@ from alpr.plate_segmentation.datasets import InstanceSegmentationDataset
 # ⠀⠀⠀⠀⠀⠀⠀⣿⣿⠀⠀⠀⠀⠀⣿⣿⡇⠀⢹⣿⡆⠀⠀⠀⣸⣿⠇⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⢿⣿⣦⣄⣀⣠⣴⣿⣿⠁⠀⠈⠻⣿⣿⣿⣿⡿⠏⠀⠀⠀⠀
 # ⠀⠀⠀⠀⠀⠀⠀⠈⠛⠻⠿⠿⠿⠿⠋⠁⠀⠀
-def get_model_instance_segmentation(num_classes: int, default: bool):
-    if default:
+def get_fasterrcnn_object_detection(num_classes: int, default_weights: bool):
+    """Returns fasterrcnn_resnet50_fpn_v2 model for object detection
+    with replaced classificator to match number of classes
+    """
+    if default_weights:
         model = torchvision.models.detection.fasterrcnn_resnet50_fpn_v2(
             weights=None, weights_backbone="DEFAULT", trainable_backbone_layers=3
         )
@@ -47,12 +51,12 @@ def get_model_instance_segmentation(num_classes: int, default: bool):
 
 
 class LicensePlatesDetection:
-    """Used for preparing data and training / eval models"""
-
-    def __init__(
-        self, model, train_set, test_set, batch_size, model_name=None
-    ):
+    def __init__(self, model, dataset, batch_size=1, train_split: float = 0.8):
+        """Used for training and evaluating models"""
         self.model = model
+        train_set, test_set = torch.utils.data.random_split(
+            dataset, [train_split, 1 - train_split]
+        )
         train_dataloader = torch.utils.data.DataLoader(
             train_set,
             batch_size=batch_size,
@@ -76,7 +80,7 @@ class LicensePlatesDetection:
     def load_state_dict(self, path_to_weights: str):
         self.model.load_state_dict(torch.load(path_to_weights))
 
-    def train(self, num_epochs: int, save_path=None, show_fr: int=0):
+    def train(self, num_epochs: int, save_path=None, show_fr: int = 0):
         self.model = self.model.to(self.device)
         self.epochs_losses_train = []
         best_IoU = 0
@@ -126,8 +130,7 @@ class LicensePlatesDetection:
 
         return loss_value
 
-    def eval(
-        self, show_fr: int = 0, score_threshold: float = 0.9) -> list:
+    def eval(self, show_fr: int = 0, score_threshold: float = 0.9) -> list:
         self.model.eval()
         self.model = self.model.to(self.device)
         iou_scores = []
@@ -150,7 +153,9 @@ class LicensePlatesDetection:
                         if i % show_fr == 0:
                             if outs[0]["boxes"].shape[0] > 0:
                                 visual = image_utils.draw_bboxes(
-                                    inputs[0], outs[0]["boxes"].unsqueeze(0), color = (0, 0, 255)
+                                    inputs[0],
+                                    outs[0]["boxes"].unsqueeze(0),
+                                    color=(0, 0, 255),
                                 )
                                 image_utils.show(visual)
 
@@ -159,11 +164,12 @@ class LicensePlatesDetection:
                             # no bboxes in target
                             iou_scores = [0.0]
                         else:
-                            
+
                             iou_scores.append(
                                 # TODO targets [?] zrobic zeby dla bathc wiecej niz 1 tez dzialalo
                                 ai_utils.metrics.get_IoU(
-                                    outs[0]["boxes"], targets[0]["boxes"].cpu().numpy()[0]
+                                    outs[0]["boxes"],
+                                    targets[0]["boxes"].cpu().numpy()[0],
                                 )
                             )
                     else:
@@ -172,34 +178,9 @@ class LicensePlatesDetection:
         return iou_scores
 
 
-class AlprSetupTraining(LicensePlatesDetection):
-    def __init__(
-        self,
-        model,
-        dataset,
-        model_name=None,
-        batch_size=1,
-        train_split=0.8,
-    ):
-        self.model_name = model_name
-#         train_split = int(train_split * len(dataset))
-#         indices_train = torch.randperm(train_split).tolist()
-#         indices_test = torch.randperm(len(dataset) - train_split).tolist()
-        train_set, test_set = torch.utils.data.random_split(dataset, [train_split, 1-train_split])
-#         t_set = torch.utils.data.Subset(dataset, indices_train)
-#         test_set = torch.utils.data.Subset(dataset, indices_test)
-        super().__init__(
-            model=model,
-            train_set=train_set,
-            test_set=test_set,
-            batch_size=batch_size,
-        )
-
-
 class PlateCropper:
-    "crops plates from given images"
-
     def __init__(self, model, images: list) -> None:
+        """Can crop images to only License Plate, using trained model"""
         self.images = images
         self.model = model
         self.device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
@@ -239,8 +220,10 @@ class PlateCropper:
                             best_box = image_utils.enlarge_box(
                                 inputs[0].shape, best_box, crop_enlarge
                             )
-                        box_img = image_utils.get_box_img(inputs[0], best_box)*255
-                        croped_plates.append(box_img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8))
+                        box_img = image_utils.get_box_img(inputs[0], best_box) * 255
+                        croped_plates.append(
+                            box_img.cpu().numpy().transpose(1, 2, 0).astype(np.uint8)
+                        )
                         scores.append(outputs[0]["scores"][0])
                     else:
                         print(f"No plate detected in {i+1} image")
@@ -251,16 +234,27 @@ class PlateCropper:
 
 
 class AlprSetupPlateCrop(PlateCropper):
-    "Extended version of PlateCropper, can save results, tracks time, shows images and results"
-
     def __init__(
-        self, model, root: str, path_to_imgs: str, idx_start: int, idx_end: int
+        self,
+        model,
+        root: str,
+        imgs_folder: str,
+        idx_start: int = 0,
+        idx_end: int = None,
     ) -> None:
+        """Extended version of PlateCropper, can save results, tracks time, shows images and results
+
+        :param idx_start: from which file in folder beign loading, defaults to 0
+        :type idx_start: int, optional
+        :param idx_end: On which file in folder to end,
+        if not provided take all, defaults to None
+        :type idx_end: int, optional
+        """
         self.root = root
-        self.path_to_imgs = path_to_imgs
+        self.path_to_imgs = imgs_folder
         self.fileterd_img_names = []
         self.ordered_images, self.fileterd_img_names = image_utils.load_images(
-            root + path_to_imgs, idx_start=idx_start, idx_end=idx_end
+            root + imgs_folder, idx_start=idx_start, idx_end=idx_end
         )
         super().__init__(model=model, images=self.ordered_images)
 
@@ -312,9 +306,9 @@ class AlprSetupPlateCrop(PlateCropper):
                             )
                         path_to_save_file = path_to_save + self.fileterd_img_names[i]
                         box_img = image_utils.get_box_img(inputs[0], best_box)
-                        box_img = 255*np.transpose(box_img.cpu().numpy(), (1, 2, 0))
+                        box_img = 255 * np.transpose(box_img.cpu().numpy(), (1, 2, 0))
                         cv2.imwrite(path_to_save_file, box_img)
-                        
+
                 elif remove_empty:
                     os.remove(
                         f"{self.root}{self.path_to_imgs}{self.fileterd_img_names[i]}"

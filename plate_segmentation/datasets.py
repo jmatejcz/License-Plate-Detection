@@ -2,11 +2,14 @@ import os
 import torch
 from PIL import Image
 import json
-import alpr.ai_utils.metrics as metrics
 import numpy as np
 
-class InstanceSegmentationDataset(torch.utils.data.Dataset):
+
+class ObjectDetectionDataset(torch.utils.data.Dataset):
     def __init__(self, images: list, transforms):
+        """Dataset for already loaded images without annotations,
+        can be used to inference
+        """
         self.transforms = transforms
         self.images = images
 
@@ -18,11 +21,14 @@ class InstanceSegmentationDataset(torch.utils.data.Dataset):
         return len(self.images)
 
 
-class InstanceSegmentationCocoDataset(torch.utils.data.Dataset):
+class ObjectDetectionCocoDataset(torch.utils.data.Dataset):
     def __init__(self, root, images_path, coco_labels_path, transforms=None):
+        """Dataset for matching images with annotations
+        and extracting needed labels from COCO dataformat
+        """
         self.root = root
         self.transforms = transforms
-        # load all image files, sorting them to
+        # loading all image files, sorting them to
         # ensure that they are aligned
         self.imgs = list(sorted(os.listdir(self.root + images_path)))
         with open(self.root + coco_labels_path, "r") as f:
@@ -44,6 +50,7 @@ class InstanceSegmentationCocoDataset(torch.utils.data.Dataset):
                     self.ordered_images.append(image)
                     break
 
+        # extract needded fields
         targets = [{} for _ in range(len(self.imgs))]
         for ann in self.labels_dict["annotations"]:
             boxes = []
@@ -58,20 +65,26 @@ class InstanceSegmentationCocoDataset(torch.utils.data.Dataset):
 
             target = {}
             target["boxes"] = torch.as_tensor(boxes, dtype=torch.float32)
-            # labels starts from 1; 0 is background
+            # labels starts from 1
+            # 0 is background
             target["labels"] = torch.as_tensor(
                 [ann["category_id"] + 1], dtype=torch.int64
             )
             target["image_id"] = torch.tensor([ann["image_id"]], dtype=torch.int64)
             target["area"] = torch.as_tensor([ann["area"]], dtype=torch.float32)
             target["iscrowd"] = torch.as_tensor([ann["iscrowd"]], dtype=torch.int64)
+
             if len(targets[ann["image_id"]]) == 0:
-                
                 targets[ann["image_id"]] = target
             else:
                 for key, value in target.items():
-                    targets[ann["image_id"]][key] = torch.cat((targets[ann["image_id"]][key], value), 0)
-        
+                    targets[ann["image_id"]][key] = torch.cat(
+                        (targets[ann["image_id"]][key], value), 0
+                    )
+
+        # at the end if image does not have any annotations
+        # we need to add empty annotation in order for
+        # pytorch to load it properly
         for i, t in enumerate(targets):
             if len(t) < 1:
                 target = {}
