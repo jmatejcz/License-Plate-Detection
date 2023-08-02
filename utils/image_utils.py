@@ -111,12 +111,12 @@ def show_multiple_imgs(images, titles = None, inch_size = (40, 40)):
             axs[i//cols, i%cols].title.set_text(f"{i+1}")
         axs[i//cols, i%cols].imshow(img)
 
-def draw_bboxes(image, boxes, labels=None, scores=None):
+def draw_bboxes(image, boxes, labels=None, scores=None, color = (255, 0, 0)):
     image = torch.as_tensor(image * 255, dtype=torch.uint8)
     if boxes.shape[0] == 0:
         return
     else:
-        visual = draw_bounding_boxes(image, boxes, colors=(255, 0, 0), width=2)
+        visual = draw_bounding_boxes(image, boxes, colors=color, width=5)
     return visual
 
 def get_box_img(image: torch.Tensor, boxes: torch.Tensor):
