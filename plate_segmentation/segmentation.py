@@ -81,6 +81,11 @@ class LicensePlatesDetection:
         self.model.load_state_dict(torch.load(path_to_weights))
 
     def train(self, num_epochs: int, save_path=None, show_fr: int = 0):
+        """Train model
+
+        :param show_fr: If greater than 0, shows images with given frequency, defaults to 0
+        :type show_fr: int, optional
+        """
         self.model = self.model.to(self.device)
         self.epochs_losses_train = []
         best_IoU = 0
@@ -105,6 +110,12 @@ class LicensePlatesDetection:
         print(f"train_time: {self.train_time}")
 
     def train_epoch(self, show_fr: int = 0):
+        """Train for one epoch
+
+        :param show_fr: If greater than 0, shows images with given frequency, defaults to 0
+        :type show_fr: int, optional
+        :return: Loss value
+        """
         self.model.train()
         for i, (inputs, targets) in enumerate(self.dataloaders["train"]):
             inputs = list(image.to(self.device) for image in inputs)
@@ -114,7 +125,7 @@ class LicensePlatesDetection:
                 if i % show_fr == 0:
                     if targets[0]["boxes"].shape[0] > 0:
                         visual = image_utils.draw_bboxes(
-                            inputs[0], targets[0]["boxes"], targets[0]["labels"]
+                            inputs[0]*255, targets[0]["boxes"], targets[0]["labels"]
                         )
                         image_utils.show(visual)
 
@@ -131,6 +142,15 @@ class LicensePlatesDetection:
         return loss_value
 
     def eval(self, show_fr: int = 0, score_threshold: float = 0.9) -> list:
+        """Evaluating model
+
+        :param show_fr: If greater than 0, shows images with given frequency, defaults to 0
+        :type show_fr: int, optional
+        :param score_threshold: threshold from which predicted bbox will be counted as valid, defaults to 0.9
+        :type score_threshold: float, optional
+        :return: List of IoU scores, for every image
+        :rtype: list
+        """
         self.model.eval()
         self.model = self.model.to(self.device)
         iou_scores = []
@@ -153,7 +173,7 @@ class LicensePlatesDetection:
                         if i % show_fr == 0:
                             if outs[0]["boxes"].shape[0] > 0:
                                 visual = image_utils.draw_bboxes(
-                                    inputs[0],
+                                    inputs[0]*255,
                                     outs[0]["boxes"].unsqueeze(0),
                                     color=(0, 0, 255),
                                 )
@@ -293,7 +313,7 @@ class AlprSetupPlateCrop(PlateCropper):
                                     boxes.append(box.cpu().numpy())
 
                                 boxes = torch.as_tensor(boxes)
-                                visual = image_utils.draw_bboxes(inputs[0], boxes)
+                                visual = image_utils.draw_bboxes(inputs[0]*255, boxes)
                                 if isinstance(visual, torch.Tensor):
                                     print(outputs[0]["scores"], boxes)
                                     image_utils.show(visual)

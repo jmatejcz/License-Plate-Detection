@@ -1,16 +1,6 @@
-from __future__ import print_function
 import cv2
 import numpy as np
 import matplotlib.pyplot as plt
-
-
-def get_images_by_frames(img_path: str, frames: list):
-    images = []
-    for frame in frames:
-        file = img_path + f"buspas_2_lane_3_1_{frame}.jpg"
-        images.append(cv2.imread(file, cv2.IMREAD_COLOR))
-    return images
-
 
 def get_keypoints_and_matches(
     images: list,
@@ -19,14 +9,14 @@ def get_keypoints_and_matches(
     edge_threshold: int = 1,
     matching_with_first: bool = True,
     show_matches: bool = True,
-):
+) -> tuple:
     """Find keypoint in every img than find matches beetwen images
 
     :param matching_with_first: If true all images are matching its keypoints. If False every image matches with the next one, defaults to True
     :type matching_with_first: bool, optional
 
-    :return: _description_
-    :rtype: _type_
+    :return: list of keypoints and list of matches
+    :rtype: tuple(list, list)
     """
 
     matcher = cv2.DescriptorMatcher_create(cv2.DESCRIPTOR_MATCHER_BRUTEFORCE_SL2)
@@ -90,7 +80,16 @@ def get_keypoints_and_matches(
     return keypoints, matches
 
 
-def get_homography_matrix(keypoints, matches):
+def get_homography_matrix(keypoints: list, matches: list) -> np.ndarray:
+    """Homography is the mapping between two planar projections of an image
+
+    :param keypoints: _description_
+    :type keypoints: list
+    :param matches: _description_
+    :type matches: list
+    :return: _description_
+    :rtype: np.ndarray
+    """
     homography_matrix = np.zeros((3, 3))
     # Extract location of matches
     for i in range(len(keypoints) - 1):
@@ -119,10 +118,23 @@ def get_homography_matrix(keypoints, matches):
 
 def transform_image(
     image,
-    homography_matrix,
+    homography_matrix: np.ndarray,
     show_image: bool = False,
     save_path=None,
 ):
+    """ransforms image using homography matrix
+
+    :param image: _description_
+    :type image: _type_
+    :param homography_matrix: _description_
+    :type homography_matrix: np.ndarray
+    :param show_image: _description_, defaults to False
+    :type show_image: bool, optional
+    :param save_path: _description_, defaults to None
+    :type save_path: _type_, optional
+    :return: _description_
+    :rtype: _type_
+    """
     (h, w) = image.shape[:2]
     aligned = cv2.warpPerspective(image, homography_matrix, (w, h))
     if show_image:
