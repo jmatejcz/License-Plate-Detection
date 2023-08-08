@@ -25,6 +25,7 @@ class ObjectDetectionCocoDataset(torch.utils.data.Dataset):
     def __init__(self, root, images_path, coco_labels_path, transforms=None):
         """Dataset for matching images with annotations
         and extracting needed labels from COCO dataformat
+
         """
         self.root = root
         self.transforms = transforms
