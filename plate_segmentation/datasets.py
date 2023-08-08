@@ -9,6 +9,11 @@ class ObjectDetectionDataset(torch.utils.data.Dataset):
     def __init__(self, images: list, transforms):
         """Dataset for already loaded images without annotations,
         can be used to inference
+
+        :param images: list of PIL images
+        :type images: list(<PIL Image>)
+        :param transforms: pytorch transforms
+        :type transforms: _type_
         """
         self.transforms = transforms
         self.images = images
@@ -22,7 +27,7 @@ class ObjectDetectionDataset(torch.utils.data.Dataset):
 
 
 class ObjectDetectionCocoDataset(torch.utils.data.Dataset):
-    def __init__(self, root, images_path, coco_labels_path, transforms=None):
+    def __init__(self, root: str, images_path: str, coco_labels_path, transforms=None):
         """Dataset for matching images with annotations
         and extracting needed labels from COCO dataformat
 

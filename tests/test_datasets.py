@@ -3,7 +3,10 @@ import os
 from PIL import Image
 import json
 import torch
-from plate_segmentation.datasets import ObjectDetectionCocoDataset
+from plate_segmentation.datasets import (
+    ObjectDetectionCocoDataset,
+    ObjectDetectionDataset,
+)
 from ai_utils.transforms import get_transform
 
 
@@ -104,7 +107,7 @@ class TestObjectDetectionCocoDataset(unittest.TestCase):
         self.assertTrue("image_id" in target)
         self.assertTrue("area" in target)
         self.assertTrue("iscrowd" in target)
-    
+
     def test_valid_extract_types(self):
         img, target = self.dataset[0]
         self.assertIsInstance(img, Image.Image)
@@ -119,13 +122,12 @@ class TestObjectDetectionCocoDataset(unittest.TestCase):
             root="tests/",
             images_path="test_images/",
             coco_labels_path="test_labels_coco.json",
-            )
+        )
 
         dataset2.merge_dataset(self.dataset)
         self.assertEqual(len(dataset2), 6)
 
     def test_getitem_types(self):
-
         img, target = self.dataset[0]
         self.assertEqual(
             target,
@@ -137,6 +139,42 @@ class TestObjectDetectionCocoDataset(unittest.TestCase):
                 "iscrowd": torch.tensor([0], dtype=torch.int64),
             },
         )
+
+
+class TestObjectDetectionDataset(unittest.TestCase):
+    def setUp(self):
+        # Create some sample data for testing
+
+        self.images = [
+            Image.new("RGB", (100, 100)),
+            Image.new("RGB", (100, 100)),
+            Image.new("RGB", (100, 100)),
+        ]
+        self.transforms = get_transform(train=False)
+        self.dataset = ObjectDetectionDataset(self.images, self.transforms)
+
+    def test_dataset_length(self):
+        actual_length = len(self.dataset)
+
+        self.assertEqual(actual_length, len(self.images))
+
+    def test_getitem_returns_tensor(self):
+        img_tensor = self.dataset[0]
+
+        self.assertIsInstance(img_tensor, torch.Tensor)
+
+    def test_getitem_shape(self):
+        img_tensor = self.dataset[1]
+
+        self.assertEqual(img_tensor.size(), (3, 100, 100))
+
+    def test_dataloader(self):
+        dataloader = torch.utils.data.DataLoader(
+            self.dataset, batch_size=1, shuffle=True
+        )
+        # Test that the dataloader can iterate over the dataset correctly
+        for i, img in enumerate(dataloader):
+            self.assertEqual(img.shape, (1, 3, 100, 100))
 
 
 if __name__ == "__main__":

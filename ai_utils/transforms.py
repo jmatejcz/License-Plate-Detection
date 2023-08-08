@@ -13,6 +13,7 @@ import math
 import re
 from textdistance import levenshtein as lev
 
+
 def _flip_coco_person_keypoints(kps, width):
     flip_inds = [0, 2, 1, 4, 3, 6, 5, 8, 7, 10, 9, 12, 11, 14, 13, 16, 15]
     flipped_data = kps[:, flip_inds]
@@ -88,8 +89,10 @@ def get_transform(train: bool):
         transforms.append(T.ConvertImageDtype(torch.float))
         return T.Compose(transforms)
 
+
 # ================================================================
 # TODO this code probably needs refactor
+
 
 def similarity(word1, word2):
     return lev.normalized_distance(word1, word2)
@@ -99,9 +102,10 @@ def corrupt(x):
     if random.random() > 0.5:
         noise = np.random.binomial(1, 1.0 - 0.2, size=x.size())
         result = x.clone()
-        result  *= noise
+        result *= noise
         return result
     return x
+
 
 def gaussian(images):
     if random.random() > 0.5:
@@ -111,14 +115,14 @@ def gaussian(images):
         return images + noise
     return images
 
+
 def time(f):
     @wraps(f)
     def _wrapped(*args, **kwargs):
         start = _timenow()
         result = f(*args, **kwargs)
         end = _timenow()
-        print('[time] {}: {}'.format(f.__name__, end - start),
-              file=stderr)
+        print("[time] {}: {}".format(f.__name__, end - start), file=stderr)
         return result
 
     return _wrapped
@@ -127,13 +131,13 @@ def time(f):
 def split(samples, **kwargs):
     total = len(samples)
     indices = list(range(total))
-    if kwargs['random']:
+    if kwargs["random"]:
         np.random.shuffle(indices)
-    percent = kwargs['split']
+    percent = kwargs["split"]
     # Split indices
     current = 0
     train_count = np.int(percent * total)
-    train_indices = indices[current:current + train_count]
+    train_indices = indices[current : current + train_count]
     current += train_count
     test_indices = indices[current:]
     train_subset, test_subset = [], []
@@ -144,26 +148,29 @@ def split(samples, **kwargs):
         test_subset.append(samples[i])
     return train_subset, test_subset
 
+
 def text_align(prWords, gtWords):
     row, col = len(prWords), len(gtWords)
-    adjMat= np.zeros((row, col), dtype=float)
+    adjMat = np.zeros((row, col), dtype=float)
     for i in range(len(prWords)):
         for j in range(len(gtWords)):
             adjMat[i, j] = similarity(prWords[i], gtWords[j])
-    pr_aligned=[]
+    pr_aligned = []
     for i in range(len(prWords)):
-        nn = list(map(lambda x:gtWords[x], np.argsort(adjMat[i, :])[:1])) 
+        nn = list(map(lambda x: gtWords[x], np.argsort(adjMat[i, :])[:1]))
         pr_aligned.append((prWords[i], nn[0]))
     return pr_aligned
 
+
 class EarlyStopping:
     """Early stops the training if validation loss doesn't improve after a given patience."""
+
     def __init__(self, save_file, patience=5, verbose=False, delta=0, best_score=None):
         """
         Args:
             patience (int): How long to wait after last time validation loss improved.
                             Default: 7
-            verbose (bool): If True, prints a message for each validation loss improvement. 
+            verbose (bool): If True, prints a message for each validation loss improvement.
                             Default: False
             delta (float): Minimum change in the monitored quantity to qualify as an improvement.
                             Default: 0
@@ -179,21 +186,21 @@ class EarlyStopping:
         print(best_score)
 
     def __call__(self, val_loss, epoch, model, optimizer):
-        
         score = -val_loss
         state = {
-                'epoch': epoch + 1,
-                'state_dict': model.state_dict(),
-                'opt_state_dict': optimizer.state_dict(),
-                'best': score
-                }
+            "epoch": epoch + 1,
+            "state_dict": model.state_dict(),
+            "opt_state_dict": optimizer.state_dict(),
+            "best": score,
+        }
         if self.best_score is None:
             self.best_score = score
             self.save_checkpoint(val_loss, state)
         elif score < self.best_score - self.delta:
-
             self.counter += 1
-            print(f'EarlyStopping counter: ({self.best_score:.6f} {self.counter} out of {self.patience})')
+            print(
+                f"EarlyStopping counter: ({self.best_score:.6f} {self.counter} out of {self.patience})"
+            )
             if self.counter >= self.patience:
                 self.early_stop = True
         else:
@@ -202,9 +209,11 @@ class EarlyStopping:
             self.counter = 0
 
     def save_checkpoint(self, val_loss, state):
-        '''Saves model when validation loss decrease.'''
+        """Saves model when validation loss decrease."""
         if self.verbose:
-            print(f'Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ...')
+            print(
+                f"Validation loss decreased ({self.val_loss_min:.6f} --> {val_loss:.6f}).  Saving model ..."
+            )
         torch.save(state, self.save_file)
         self.val_loss_min = val_loss
 
@@ -231,16 +240,23 @@ class AverageMeter:
         return self.total / self.count
 
     def __str__(self):
-        return "%s (min, avg, max): (%.3lf, %.3lf, %.3lf)" % (self.name, self.min, self.compute(), self.max)
+        return "%s (min, avg, max): (%.3lf, %.3lf, %.3lf)" % (
+            self.name,
+            self.min,
+            self.compute(),
+            self.max,
+        )
+
 
 class Eval:
-    def _blanks(self, max_vals,  max_indices):
+    def _blanks(self, max_vals, max_indices):
         def get_ind(indices):
             result = []
             for i in range(len(indices)):
                 if indices[i] != 0:
                     result.append(i)
             return result
+
         non_blank = list(map(get_ind, max_indices))
         scores = []
 
@@ -255,14 +271,13 @@ class Eval:
             scores.append(score)
         return scores
 
-
     def _clean(self, word):
-        regex = re.compile('[%s]' % re.escape('!"#$%&\'()*+,-./:;<=>?@[\\]^_`{|}~“”„'))
-        return regex.sub('', word)
+        regex = re.compile("[%s]" % re.escape("!\"#$%&'()*+,-./:;<=>?@[\\]^_`{|}~“”„"))
+        return regex.sub("", word)
 
     def char_accuracy(self, pair):
         words, truths = pair
-        words, truths = ''.join(words), ''.join(truths)
+        words, truths = "".join(words), "".join(truths)
         sum_edit_dists = lev.distance(words, truths)
         sum_gt_lengths = sum(map(len, truths))
         fraction = 0
@@ -286,7 +301,7 @@ class Eval:
         target_ = []
         start = 0
         for size_ in target_sizes:
-            target_.append(target[start:start + size_])
+            target_.append(target[start : start + size_])
             start += size_
         return target_
 
@@ -295,6 +310,7 @@ class Eval:
         word_pairs = text_align(preds.split(), truths.split())
         word_acc = np.mean((list(map(self.word_accuracy, word_pairs))))
         return word_acc
+
 
 class OCRLabelConverter(object):
     """Convert between str and label.
@@ -311,13 +327,14 @@ class OCRLabelConverter(object):
         self._ignore_case = ignore_case
         if self._ignore_case:
             alphabet = alphabet.lower()
-        self.alphabet = alphabet + '-'  # for `-1` index
+        self.alphabet = alphabet + "-"  # for `-1` index
 
         self.dict = {}
         for i, char in enumerate(alphabet):
             # NOTE: 0 is reserved for 'blank' required by wrap_ctc
             self.dict[char] = i + 1
-        self.dict[''] = 0
+        self.dict[""] = 0
+
     def encode(self, text):
         """Support batch or single str.
 
@@ -328,7 +345,7 @@ class OCRLabelConverter(object):
             torch.IntTensor [length_0 + length_1 + ... length_{n - 1}]: encoded texts.
             torch.IntTensor [n]: length of each text.
         """
-        '''
+        """
         if isinstance(text, str):
             text = [
                 self.dict[char.lower() if self._ignore_case else char]
@@ -340,7 +357,7 @@ class OCRLabelConverter(object):
             text = ''.join(text)
             text, _ = self.encode(text)
         return (torch.IntTensor(text), torch.IntTensor(length))
-        '''
+        """
         length = []
         result = []
         for item in text:
@@ -371,25 +388,32 @@ class OCRLabelConverter(object):
         """
         if length.numel() == 1:
             length = length[0]
-            assert t.numel() == length, "text with length: {} does not match declared length: {}".format(t.numel(),
-                                                                                                         length)
+            assert (
+                t.numel() == length
+            ), "text with length: {} does not match declared length: {}".format(
+                t.numel(), length
+            )
             if raw:
-                return ''.join([self.alphabet[i - 1] for i in t])
+                return "".join([self.alphabet[i - 1] for i in t])
             else:
                 char_list = []
                 for i in range(length):
                     if t[i] != 0 and (not (i > 0 and t[i - 1] == t[i])):
                         char_list.append(self.alphabet[t[i] - 1])
-                return ''.join(char_list)
+                return "".join(char_list)
         else:
             # batch mode
-            assert t.numel() == length.sum(), "texts with length: {} does not match declared length: {}".format(
-                t.numel(), length.sum())
+            assert (
+                t.numel() == length.sum()
+            ), "texts with length: {} does not match declared length: {}".format(
+                t.numel(), length.sum()
+            )
             texts = []
             index = 0
             for i in range(length.numel()):
                 l = length[i]
                 texts.append(
-                    self.decode(t[index:index + l], torch.IntTensor([l]), raw=raw))
+                    self.decode(t[index : index + l], torch.IntTensor([l]), raw=raw)
+                )
                 index += l
             return texts
